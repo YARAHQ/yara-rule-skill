@@ -2,8 +2,6 @@
 """
 Package the yara-rule-skill for distribution.
 
-Author: Thomas Roccia (@fr0gger)
-
 Usage: python3 installer/package_skill.py
 """
 
