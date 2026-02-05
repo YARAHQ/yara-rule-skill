@@ -1,5 +1,6 @@
 ---
 name: yara-skill
+version: 1.1
 description: Expert YARA rule authoring, review, and optimization. Use when writing new YARA rules, reviewing existing rules for quality issues, optimizing rule performance, or converting detection logic to YARA syntax. Covers rule naming conventions, string selection, condition optimization, performance tuning, and automated quality checks based on yaraQA.
 ---
 
@@ -412,6 +413,61 @@ strings:
    $section_hash = { d9 9e b1 e5 03 ca c3 a1 ... }
 condition:
    $section_hash
+```
+
+---
+
+## Rule Review Output Format
+
+When reviewing an existing rule, produce an **Assessed Rule** with inline comments rather than a fully rewritten version. This educates the author while preserving their original decisions.
+
+### Principles
+
+1. **Fix only obvious issues** — PA1, meta typos, missing mandatory fields
+2. **Preserve original identifiers** — Keep `$ama_*`, don't rename to `$x1`, `$s1`
+3. **Add educational comments** — Explain the triad approach without enforcing it
+4. **Suggest, don't prescribe** — Let the author decide on string grouping
+
+### Comment Style
+
+| Location | Comment Purpose |
+|----------|-----------------|
+| Rule name | Suggest naming convention (e.g., `// naming: add category prefix`) |
+| Meta fields | Fix typos (`link` → `reference`), flag missing `date`/`score` |
+| Strings block | Explain triad: `// split into $x* (highly specific) vs $s* (supporting)` |
+| Performance issues | Reference yaraQA ID: `// PA1: use uint16(0) == 0x5A4D instead` |
+| Condition | Suggest logic: `// best use 1 of ($x*) for highly specific strings` |
+
+### Example Assessed Rule
+
+```yara
+rule MAL_Amaranth_Loader_Aug23 {   // naming: add category prefix (MAL_) and date
+   meta:
+      author = "@Tera0017/@_CPResearch_"
+      description = "Amaranth Loader"
+      reference = "https://research.checkpoint.com/"   // was: link
+      date = "2023-08-15"                              // add: creation date
+      score = 80                                       // add: severity score
+
+   strings:
+      // Consider splitting into groups: highly specific ($x*) vs supporting ($s*)
+      // $ama_iv and $ama_decr are unique — use 1 of ($x*) for these
+      // $ama_size is less unique — combine via 2 of ($s*) or all of ($s*)
+      
+      $mz = "MZ"   // PA1: use uint16(0) == 0x5A4D instead (faster, no atoms)
+      
+      $ama_size = {41 BD 01 00 00 00 41 BC 00 40 06 00 E9 92 00 00 00}
+      $ama_iv = {C7 84 24 30 02 00 00 12 34 56 78 ...}
+      $ama_decr = {FF C1 48 D3 E8 41 30 00 FF C2 49 FF C0}
+
+   condition:
+      uint16(0) == 0x5A4D        // was: $mz at 0 (see PA1)
+      and filesize < 10MB        // add: filesize limit for performance
+      // best use 1 of ($x*) for highly specific strings
+      // and combinations of 2 of ($s*) or all of ($s*) for less specific strings
+      // e.g.: (1 of ($x*) or 2 of ($ama_size, $ama_decr))
+      and any of ($ama*)
+}
 ```
 
 ---
