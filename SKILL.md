@@ -7,7 +7,7 @@ description: Expert YARA rule authoring, review, and optimization. Use when writ
 
 Expert guidance for writing high-quality, performant YARA rules based on industry best practices and automated QA checks.
 
-> **Version:** 1.2 — Added compilation requirement and commented suggestion patterns
+> **Version:** 1.3 — Added string diversity guidance (mix categories, not quantity)
 
 > **Scope:** This skill covers readability, maintainability, and usability. For performance optimization (atoms, short-circuit evaluation), see the Performance Reference.
 
@@ -232,6 +232,50 @@ rule HKTL_Go_EasyHack_Oct23 {
       )
       and not 1 of ($fp*)
 }
+```
+
+### String Diversity — Mix Categories, Not Quantity
+
+**Avoid over-reliance on similar strings.** If the author changes a pattern (e.g., `[DEBUG]` → `[DBG]`), all strings of that type become obsolete at once.
+
+**DO:** Select 1-4 strings from **different categories** for resilience:
+
+| Category | Examples |
+|----------|----------|
+| Format strings | `"[DEBUG] %s: %d"`, `"%s:%d/%s"` |
+| File paths | `"C:\\Users\\Public\\file.exe"`, `"/tmp/.hidden/data"` |
+| Usage/help | `"Usage: malware.exe <host> <port>"` |
+| Error messages | `"[ERROR] Connection failed"` |
+| IP addresses | `"192.168.1.100"`, `"10.0.0.1"` |
+| Domains | `"evil.com"`, `"cdn.badactor.net"` |
+| Build artifacts | `"hackme.pdb"`, `"/src/main.c"` |
+| URLs | `"https://evil.com/payload.exe"` |
+| Command lines | `"cmd.exe /c powershell -enc"` |
+| Function names | `"inject_payload"`, `"steal_cookies"` |
+| Variable names | `"g_hMutex"`, `"s_config"` |
+| Special imports | `"WinExec"`, `"InternetOpenA"` |
+
+**DON'T — Too many similar strings (fragile):**
+```yara
+// AVOID: 8 debug strings with same prefix
+$s1 = "[DEBUG] WinHTTP session opened" fullword ascii
+$s2 = "[DEBUG] Download URL: %s" fullword ascii
+$s3 = "[DEBUG] Adding HTTP headers..." fullword ascii
+$s4 = "[DEBUG] Download complete!" fullword ascii
+$s5 = "[DEBUG] Starting PE execution" fullword ascii
+$s6 = "[DEBUG] PE execution completed" fullword ascii
+$s7 = "[DEBUG] Waiting %d seconds..." fullword ascii
+// If author changes [DEBUG] to [DBG], ALL break
+```
+
+**DO — Diverse categories (resilient):**
+```yara
+// GOOD: Mix of categories
+$x1 = "[ERROR] Usage: stager_evade.exe <url>"  // Usage help
+$s1 = "stager_debug.log"                       // File path
+$s2 = "https://%s:%d/%s"                       // URL format
+$s3 = { 68 74 74 70 73 3A 2F 2F }             // "https://" hex
+$op1 = { C3 0F 1F 40 00 66 66 2E 0F }         // OpCodes
 ```
 
 ### String Identifier Best Practices
