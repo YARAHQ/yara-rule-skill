@@ -617,8 +617,62 @@ Reference yaraQA issue IDs when suggesting improvements.
 
 ---
 
+## Rule Validation (Required)
+
+**Every YARA rule must be validated before returning it to the user.**
+
+Before presenting any new or modified rule, run it through the validation script to ensure it compiles correctly:
+
+```bash
+# From file
+python scripts/validate_rule.py rule.yar
+
+# From stdin (for in-memory rules)
+echo 'rule test { condition: true }' | python scripts/validate_rule.py --stdin
+```
+
+### Validation Workflow
+
+1. **Write/modify the rule** following the guidelines above
+2. **Run validation** — pipe the rule directly or save to temp file
+3. **If validation fails** — fix the syntax errors and re-validate
+4. **If validation passes** — return the rule to the user
+
+### Validation Output
+
+The script uses YARA-X to compile the rule and reports:
+- **Compilation errors** — Syntax issues that prevent the rule from working
+- **Warnings** — Potential issues that should be reviewed
+
+```
+==================================================
+YARA RULE VALIDATION
+==================================================
+
+Rule: MAL_Example_Jan24
+
+✓ Compilation: PASSED
+
+==================================================
+```
+
+### Never Skip Validation
+
+- **Do not** return a rule without validating it first
+- **Do not** assume a rule is correct based on visual inspection
+- **Always** fix any compilation errors before presenting the rule
+
+This ensures users receive syntactically correct, working YARA rules.
+
+---
+
 ## Resources
 
+### References
 - [references/style.md](references/style.md) — Complete naming, structure, formatting
 - [references/performance.md](references/performance.md) — Atoms, optimization, conditions
 - [references/yaraqa-checks.md](references/yaraqa-checks.md) — All 20 automated checks
+- [references/issue-identifiers.md](references/issue-identifiers.md) — Complete issue ID reference (50+ IDs)
+
+### Scripts
+- [scripts/validate_rule.py](scripts/validate_rule.py) — YARA-X syntax validation
