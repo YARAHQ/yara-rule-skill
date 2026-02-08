@@ -203,6 +203,22 @@ Organize strings using the **Triad Approach** plus false positive filters:
 |`$a*`|Pre-selection|Narrows file type; use early in condition|
 |`$fp*`|False positive filters|Exclude benign; `not 1 of ($fp*)`|
 
+### String Count Guidelines
+
+**Maximum 10 strings total** (including opcodes). Optimal: **3-7 strings**.
+
+Too many strings:
+- Increases memory usage during scanning
+- Slows down rule matching
+- Often indicates redundant/weak strings
+- Makes rules harder to maintain
+
+**When reviewing rules:**
+- Select the **highest-scoring/most unique** strings
+- Remove strings with high goodware counts
+- Eliminate similar strings (e.g., debug messages with same prefix)
+- 1-2 opcodes maximum (if included)
+
 ### Example
 
 ```yara
