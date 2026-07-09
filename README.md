@@ -33,7 +33,7 @@ git clone https://github.com/YARAHQ/yara-rule-skill.git
 cd yara-rule-skill
 
 # Package the skill
-python3 scripts/package_skill.py .
+python3 installer/package_skill.py
 
 # Install the packaged skill
 cp yara-rule-skill.skill ~/.openclaw/skills/
