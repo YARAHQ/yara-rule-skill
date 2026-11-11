@@ -1,6 +1,6 @@
 # yaraQA Check Reference
 
-Source: [Neo23x0/yaraQA](https://github.com/Neo23x0/yaraQA). Thresholds and levels below are taken from the yaraQA source code (`main/string_checks.py`, `main/condition_checks.py`, `main/combination_checks.py`, `main/core.py`). YARA-Forge runs these same checks on every rule it collects (see [yara-forge.md](yara-forge.md)).
+Source: [Neo23x0/yaraQA](https://github.com/Neo23x0/yaraQA). Thresholds and levels below are taken from the yaraQA source code (`main/string_checks.py`, `main/condition_checks.py`, `main/combination_checks.py`, `main/core.py`). YARA-Forge runs the per-rule checks on every rule it collects; the rule set checks `MO1` and `DU1` don't run there (see [yara-forge.md](yara-forge.md)).
 
 yaraQA finds rules that compile but are dysfunctional: they never match, misuse modifiers, or slow down the whole rule set.
 
