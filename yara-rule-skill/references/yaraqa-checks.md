@@ -115,6 +115,8 @@ $a = "evil.exe"
 $b = "evil.exe"   // DS1
 ```
 
+Two strings are duplicates when they have the same type, value, and modifiers: hex is compared without spaces and case, `nocase` text without case, and a text or regex string without `ascii` or `wide` counts as `ascii`. So `"abc"` and `"abc" ascii` are duplicates; `"abc"` and `"abc" wide` aren't. Anonymous strings (`$ = "..."`) are covered too. Each repeat is reported once and names the first string (`duplicate_of`).
+
 YARA-X also warns (`duplicate_pattern_value`).
 
 ### CS1: substring of another string
@@ -212,7 +214,7 @@ Strings named `$filter*`, `$fp*`, `$false*`, or `$exclu*` don't count. Long list
 
 ### HS3, HS4: many regex strings
 
-In more than 90% of cases a rule can be written without regex.
+`HS3` covers 3 or 4 regex strings, `HS4` five or more. In more than 90% of cases a rule can be written without regex.
 
 ## Style checks
 
@@ -230,10 +232,10 @@ Not reported when the bytes include control characters such as `\t` or `\n`; tho
 These need the whole rule set:
 
 - **`MO1`** reports a module (other than `math` and `hash`) that is used by fewer than 1% of the rules, or by only two rules in a set of more than 30. Loading a module costs time on every scanned file, so a module that few rules need is expensive. Only modules referenced in a condition count.
-- **`DU1`** reports rules whose strings and condition hash to the same value.
+- **`DU1`** reports rules whose strings and condition hash to the same value. The hash ignores rule names and string identifiers, and it sorts string values and condition terms, so renamed or reordered copies are caught. The sorting also drops structure: rules that differ only in term order (`a and b or c` versus `a or b and c`) or in which string a term belongs to (`#a > 2 and #b > 5` versus `#a > 5 and #b > 2` over the same strings) collide. Confirm a `DU1` by reading both rules.
 
 ## Limits of the checks
 
 yaraQA works on the parsed rule text and uses heuristics. It doesn't judge false-positive risk, string specificity, metadata, or naming; use [style.md](style.md) and [issue-identifiers.md](issue-identifiers.md) for those. It also doesn't compile the rule: run the validator for syntax errors and engine warnings.
 
-In yaraQA as of commit `df60c14` (June 2026), `DS1`, `DU1`, and `HS4` are defined but never emitted because of bugs in the code (a rule with five regex strings gets `HS3`). Report them from manual review; the IDs and their meaning stay valid.
+`DS1`, `DU1`, and `HS4` only fire since yaraQA commit `d8e1d0f` (November 2026); older versions never report them, and a rule with five regex strings gets `HS3` there. With an older yaraQA, or a YARA-Forge build that pins one, check these three by hand.

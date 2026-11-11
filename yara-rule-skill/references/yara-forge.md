@@ -77,7 +77,7 @@ One level-2 issue takes a rule from a quality-90 repository to 65, below the cor
 | `SI2` | 3 (error) | Compiles only with warnings: Forge compiles with `error_on_warning=True`. Typical causes: regex with `.*`/`.+`/`.{n,}`, strings that "may slow down scanning", conditions that are always false. |
 | yaraQA IDs | 1-3 | The per-rule checks in [yaraqa-checks.md](yaraqa-checks.md), with Forge's own regex timing for `PI1`. Forge calls yaraQA one rule at a time, so the rule set checks `MO1` and `DU1` never run. |
 
-Forge writes every issue to `yara-forge-rule-issues.yml`, grouped by source repository. yaraQA is a pinned git submodule (`qa/yaraQA`), so yaraQA changes reach Forge only after the submodule is updated.
+Forge writes every issue to `yara-forge-rule-issues.yml`, grouped by source repository. yaraQA is a pinned git submodule (`qa/yaraQA`), so yaraQA changes reach Forge only after the submodule is updated. As of November 2026 Forge pins a yaraQA version from before the `DS1` and `HS4` fixes, so it doesn't report those two yet.
 
 ## Packages
 
