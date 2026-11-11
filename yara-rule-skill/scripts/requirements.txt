@@ -1,1 +1,4 @@
 yara-x>=0.10.0
+# Optional but recommended: adds a YARA 4.x (libyara) compile pass,
+# the engine YARA-Forge uses. The validator skips it if not installed.
+yara-python>=4.3.0

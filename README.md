@@ -1,171 +1,169 @@
 # YARA Rule Skill (Community Edition)
 
-An **LLM Agent Skill** for expert YARA rule authoring, review, and optimization. Embeds industry best practices from the creator of [YARA-Forge](https://github.com/YARAHQ/yara-forge) and [yaraQA](https://github.com/Neo23x0/yaraQA) into your AI assistant's context.
+An **LLM agent skill** for writing, reviewing, and optimizing YARA rules. It puts the practices behind [YARA-Forge](https://github.com/YARAHQ/yara-forge) and [yaraQA](https://github.com/Neo23x0/yaraQA) into your AI assistant's context.
 
-## 🎯 What This Skill Does
+## What This Skill Does
 
-The **yara-rule-skill** transforms your LLM agent into a YARA rule expert, capable of:
+With the skill installed, your agent can:
 
-- **Writing** high-quality, performant YARA rules from scratch
-- **Reviewing** existing rules for quality issues and performance problems
-- **Optimizing** slow rules by identifying performance bottlenecks
-- **Validating** rules against 20+ automated quality checks from yaraQA
+- **Write** rules from samples or strings you provide, following the YARA Style Guide
+- **Review** existing rules and report findings with yaraQA and guideline IDs
+- **Optimize** slow rules and fix "too many matches" errors
+- **Validate** every rule it outputs by compiling it with YARA-X and YARA 4.x
+- **Prepare** rules for YARA-Forge (no compile warnings, explicit score, clean metadata)
 
-All through natural language conversation — just paste a rule and ask.
+Paste a rule and ask, or describe what you want to detect.
 
-## 📦 Installation
+## Installation
 
-### Option 1: Clone and Copy (Recommended)
+### Option 1: Copy the skill folder (recommended)
 
 ```bash
-# Clone the repository
 git clone https://github.com/YARAHQ/yara-rule-skill.git
 
-# Copy to your agent's skills folder
-cp -r yara-rule-skill ~/.openclaw/skills/
+# Claude Code (personal skills)
+cp -r yara-rule-skill/yara-rule-skill ~/.claude/skills/
+
+# OpenClaw
+cp -r yara-rule-skill/yara-rule-skill ~/.openclaw/skills/
 ```
 
-### Option 2: Package as .skill File
+Install the validator dependencies:
 
 ```bash
-# Clone the repository
+pip install -r yara-rule-skill/yara-rule-skill/scripts/requirements.txt
+```
+
+### Option 2: Package as a .skill file
+
+```bash
 git clone https://github.com/YARAHQ/yara-rule-skill.git
 cd yara-rule-skill
-
-# Package the skill
-python3 scripts/package_skill.py .
-
-# Install the packaged skill
+python3 installer/package_skill.py
 cp yara-rule-skill.skill ~/.openclaw/skills/
 ```
 
-### Supported Platforms
+### Supported platforms
 
-This skill works with any LLM agent that supports skill files:
+Any agent that supports `SKILL.md` skills:
 
-- **OpenClaw** — `~/.openclaw/skills/`
-- **Claude Desktop** — (skills folder location varies)
-- **Other MCP-based agents** — Check your platform's documentation
+- **Claude Code**: `~/.claude/skills/` (personal) or `.claude/skills/` (project)
+- **OpenClaw**: `~/.openclaw/skills/`
+- **Other agents**: see your platform's documentation
 
-## 🚀 Usage
+## Usage
 
-Once installed, the skill activates automatically when you discuss YARA rules. Just ask:
+The skill activates when you talk about YARA rules.
 
-### Use Case 1: Review My Rule
+### Review a rule
 > "Review this YARA rule and suggest improvements"
 
-The skill analyzes:
-- Naming conventions (`MAL_`, `HKTL_`, `SUSP_`, etc.)
-- String selection (atom quality, modifiers)
-- Condition logic (short-circuit evaluation)
-- Metadata completeness
+You get a verdict, a findings table (ID, severity, fix), and your rule back with minimal fixes and inline comments. The returned rule always compiles.
 
-### Use Case 2: Assess Public Rules
+### Assess public rules
 > "Assess the quality of this rule I found online"
 
-The skill checks against 20+ automated quality checks:
-- Logic errors (conditions that never match)
-- Performance issues (short atoms, unanchored regex)
-- Style violations (naming, formatting)
-- Resource problems (too many strings/regex)
+Checks logic errors (conditions that never match, `fullword` on paths), performance (short atoms, unanchored regex, expensive conditions), false-positive risk, metadata, and naming.
 
-### Use Case 3: Performance Diagnosis
+### Diagnose performance
 > "This rule causes performance issues, why?"
 
-The skill identifies:
-- Missing regex anchors (`.*`, `.+`)
-- Short atoms (< 4 bytes)
-- Expensive calculations before cheap checks
-- Module usage that could be replaced
+Walks through the Performance Guidelines' checklist: regex quantifiers, short or uniform atoms, alternations, loops, modules.
 
-## 📚 What's Included
+### Write a rule
+> "Write a YARA rule for these strings from the sample"
 
-### Core Knowledge
+Produces a named, documented rule with grouped strings (`$x*`, `$s*`, `$a*`, `$fp*`), validated before it's returned.
 
-The skill combines three authoritative sources into your agent's context:
+## What's Included
 
-1. **[YARA Performance Guidelines](https://github.com/Neo23x0/YARA-Performance-Guidelines)** — Optimization techniques, atom selection, condition ordering
-2. **[YARA Style Guide](https://github.com/Neo23x0/YARA-Style-Guide)** — Naming conventions, rule structure, metadata standards  
-3. **[yaraQA](https://github.com/Neo23x0/yaraQA)** — 20+ automated quality checks
+### Sources
 
-### String Categories
+| Source | Covers |
+|--------|--------|
+| [YARA Style Guide](https://github.com/Neo23x0/YARA-Style-Guide) | Naming, metadata, string groups, condition layout |
+| [YARA Performance Guidelines](https://github.com/Neo23x0/YARA-Performance-Guidelines) | Atoms, regex, short-circuit evaluation, modules |
+| [yaraQA](https://github.com/Neo23x0/yaraQA) | 25 automated checks with exact thresholds and levels |
+| [YARA-Forge](https://github.com/YARAHQ/yara-forge) | Compile gates, metadata normalization, score and quality, package tiers |
 
-The skill teaches the `$x*`, `$s*`, `$a*`, `$fp*` naming convention:
+### String groups
 
-| Prefix | Purpose | Example Usage |
-|--------|---------|---------------|
-| `$x*` | Highly specific (unique) | `1 of ($x*)` — triggers on signature |
-| `$s*` | Grouped strings | `all of ($s*)` — need multiple matches |
-| `$a*` | Pre-selection (file type) | `$a1` — narrows to PE files first |
-| `$fp*` | False positive filters | `not 1 of ($fp*)` — exclude benign |
+| Prefix | Purpose | Condition |
+|--------|---------|-----------|
+| `$x*` | Highly specific; one hit is enough | `1 of ($x*)` |
+| `$s*` | Weak alone, meaningful together | `all of ($s*)` |
+| `$a*` | Pre-selection (file type, format) | `$a1 and ...` |
+| `$fp*` | False positive filters | `not 1 of ($fp*)` |
 
-### Rule Naming Convention
-
-```yara
-rule MAL_APT_CozyBear_ELF_Loader_Apr18 {
-    // MAL      = Malware
-    // APT      = Nation state actor
-    // CozyBear = Threat actor name
-    // ELF      = Linux platform
-    // Loader   = Malware type
-    // Apr18    = Date (April 2018)
-}
-```
-
-### Quality Checks
-
-The skill covers all 20 yaraQA issue IDs:
-
-**Logic Errors:** `CE1`, `SM1-6`, `DS1`, `CS1`, `DU1`  
-**Performance:** `PA1-2`, `RE1`, `CF1-2`, `PI1`, `NC1`, `NO1`, `MO1`  
-**Style:** `SV1-2`  
-**Resources:** `HS1-4`
-
-## 🧪 Example Assessment
-
-See [TEST_ASSESSMENT.md](TEST_ASSESSMENT.md) for real-world rule reviews from public repositories.
-
-## 🏗️ Repository Structure
+### Rule naming
 
 ```
-yara-rule-skill/
-├── SKILL.md                      # Main skill file
-├── references/
-│   ├── performance.md            # Performance optimization guide
-│   ├── style.md                  # Style and naming conventions
-│   └── yaraqa-checks.md          # Complete yaraQA check reference
-├── scripts/
-│   └── package_skill.py          # Packaging script
-└── README.md                     # This file
+MAL_APT_CozyBear_ELF_Loader_Apr18
+ │   │      │     │    │      └─ suffix: month and year
+ │   │      │     │    └─ type
+ │   │      │     └─ technology
+ │   │      └─ threat actor
+ │   └─ intention
+ └─ main category (MAL, HKTL, WEBSHELL, EXPL, VULN, SUSP, PUA)
 ```
 
-## 🌐 Website
+### Issue IDs
 
-Visit [https://YARAHQ.github.io/yara-rule-skill-site/](https://YARAHQ.github.io/yara-rule-skill-site/) for:
+- **yaraQA (automated):** `CE1`, `SM1`-`SM6`, `DS1`, `CS1`, `SV1`, `SV2`, `PA1`, `PA2`, `RE1`, `NC1`, `NO1`, `CF1`, `CF2`, `PI1`, `MO1`, `HS1`-`HS4`, `DU1`
+- **YARA-Forge (automated):** `SI1` (doesn't compile), `SI2` (compiles with warnings)
+- **Manual review:** naming `NM*`, metadata `MF*`, strings `TR*`/`SS*`, conditions `CL*`, layout `FM*`/`ID*`, performance `RX*`, compatibility `CC*`
 
-- Overview of the skill
-- Use case examples
-- Installation instructions
+## Example Assessment
 
-## 🤝 Contributing
+[TEST_ASSESSMENT.md](TEST_ASSESSMENT.md) shows reviews of real rules from public repositories in the skill's output format.
 
-Contributions welcome! Areas to help:
+## Repository Structure
 
-- Additional rule examples
-- New quality checks
-- Performance benchmarks
-- Documentation improvements
+```
+yara-rule-skill/                     # repository
+├── README.md
+├── TEST_ASSESSMENT.md               # example reviews
+├── installer/
+│   └── package_skill.py             # builds yara-rule-skill.skill
+└── yara-rule-skill/                 # the skill (copy this folder)
+    ├── SKILL.md                     # workflows and core rules
+    ├── references/
+    │   ├── style.md                 # YARA Style Guide
+    │   ├── performance.md           # YARA Performance Guidelines
+    │   ├── yaraqa-checks.md         # yaraQA checks, thresholds, levels
+    │   ├── issue-identifiers.md     # all issue IDs, manual-review IDs
+    │   └── yara-forge.md            # YARA-Forge QA, scoring, packages
+    └── scripts/
+        ├── validate_rule.py         # compiles with YARA-X and YARA 4.x
+        ├── requirements.txt
+        └── README.md
+```
 
-## 📄 License
+## Website
 
-This skill is derived from Florian Roth's YARA guides and yaraQA tool. See individual source repositories for licensing details.
+[https://YARAHQ.github.io/yara-rule-skill-site/](https://YARAHQ.github.io/yara-rule-skill-site/) has an overview, use cases, and installation instructions.
+
+## Contributing
+
+Contributions welcome:
+
+- Rule examples and assessments
+- Corrections where the skill diverges from its sources
+- Validator improvements
+- Documentation
+
+## License
+
+This skill is derived from Florian Roth's YARA guides and yaraQA tool, and from YARA-Forge. See the source repositories for licensing:
 
 - [YARA-Performance-Guidelines](https://github.com/Neo23x0/YARA-Performance-Guidelines)
 - [YARA-Style-Guide](https://github.com/Neo23x0/YARA-Style-Guide)
 - [yaraQA](https://github.com/Neo23x0/yaraQA)
+- [YARA-Forge](https://github.com/YARAHQ/yara-forge)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **Florian Roth** (@cyb3rops) — Creator of the original guides and yaraQA
-- **YARA HQ** — Community organization for YARA excellence
-- **Victor M. Alvarez** — Creator of YARA
+- **Florian Roth** (@cyb3rops): creator of the guides, yaraQA, and YARA-Forge
+- **Thomas Roccia** (@fr0gger): validation script
+- **YARA HQ**: community organization for YARA excellence
+- **Victor M. Alvarez**: creator of YARA and YARA-X
