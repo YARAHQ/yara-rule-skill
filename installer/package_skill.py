@@ -9,36 +9,28 @@ import os
 import zipfile
 from pathlib import Path
 
+SKIP_NAMES = {"__pycache__", ".DS_Store"}
+SKIP_SUFFIXES = {".pyc"}
+
 
 def package_skill():
-    """Package the skill into a .skill file."""
+    """Package every file of the skill directory into a .skill (zip) file."""
 
     skill_name = "yara-rule-skill"
     skill_dir = Path(skill_name)
     skill_file = f"{skill_name}.skill"
 
-    # Files to include (relative to skill directory)
-    include_files = [
-        "SKILL.md",
-        "references/performance.md",
-        "references/style.md",
-        "references/yaraqa-checks.md",
-        "references/issue-identifiers.md",
-        "scripts/validate_rule.py",
-        "scripts/requirements.txt",
-        "scripts/README.md",
-    ]
-
     print(f"Packaging {skill_name}...")
 
     with zipfile.ZipFile(skill_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for file_path in include_files:
-            full_path = skill_dir / file_path
-            if full_path.exists():
-                zf.write(full_path, file_path)
-                print(f"  Added: {file_path}")
-            else:
-                print(f"  Warning: {file_path} not found")
+        for full_path in sorted(skill_dir.rglob("*")):
+            if not full_path.is_file():
+                continue
+            if any(part in SKIP_NAMES for part in full_path.parts) or full_path.suffix in SKIP_SUFFIXES:
+                continue
+            arcname = full_path.relative_to(skill_dir).as_posix()
+            zf.write(full_path, arcname)
+            print(f"  Added: {arcname}")
 
     size = os.path.getsize(skill_file)
     print(f"\n✅ Created: {skill_file} ({size:,} bytes)")
